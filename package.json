@@ -1,0 +1,29 @@
+{
+  "name": "satellite-overhead-js",
+  "version": "1.0.0",
+  "description": "JavaScript examples for calling Python satellite overhead calculation function",
+  "main": "src/satellite_call_nodejs.js",
+  "scripts": {
+    "test": "node src/satellite_call_nodejs.js",
+    "test:api": "node src/satellite_call_api.js",
+    "start:api": "python python/satellite_api.py"
+  },
+  "keywords": [
+    "satellite",
+    "TLE",
+    "orbit",
+    "overhead",
+    "python",
+    "javascript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "node-fetch": "^2.6.7"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
+
