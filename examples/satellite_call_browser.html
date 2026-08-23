@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>卫星过顶计算 - Pyodide 浏览器版</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .input-group {
+            margin: 15px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        textarea {
+            font-family: monospace;
+            resize: vertical;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-left: 4px solid #4CAF50;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
+        .error {
+            color: #d32f2f;
+            border-left-color: #d32f2f;
+        }
+        .success {
+            color: #2e7d32;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛰️ 卫星过顶计算（浏览器版）</h1>
+        <p>使用 Pyodide 在浏览器中运行 Python 代码</p>
+
+        <div class="input-group">
+            <label>TLE 第一行:</label>
+            <textarea id="tle_line1" rows="2">1 25544U 98067A   24123.56789012  .00001234  00000-0  12345-3 0  9999</textarea>
+        </div>
+
+        <div class="input-group">
+            <label>TLE 第二行:</label>
+            <textarea id="tle_line2" rows="2">2 25544  51.6432 123.4567 0001234  78.9012 281.2345 15.5432123456789</textarea>
+        </div>
+
+        <div class="grid">
+            <div class="input-group">
+                <label>纬度 (度):</label>
+                <input type="number" id="lat" value="39.9" step="0.1">
+            </div>
+            <div class="input-group">
+                <label>经度 (度):</label>
+                <input type="number" id="lon" value="116.4" step="0.1">
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="input-group">
+                <label>海拔 (千米):</label>
+                <input type="number" id="alt" value="0.05" step="0.01">
+            </div>
+            <div class="input-group">
+                <label>天顶角阈值 (度):</label>
+                <input type="number" id="overhead_theta" value="10" step="1">
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="input-group">
+                <label>起始时间 (ISO格式):</label>
+                <input type="text" id="t_start" value="2024-05-03T00:00:00">
+            </div>
+            <div class="input-group">
+                <label>结束时间 (ISO格式):</label>
+                <input type="text" id="t_end" value="2024-05-16T00:00:00">
+            </div>
+        </div>
+
+        <div class="input-group">
+            <label>时间步长 (秒):</label>
+            <input type="number" id="time_step" value="10" step="1">
+        </div>
+
+        <button id="calculateBtn" onclick="calculateOverhead()">计算卫星过顶</button>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        let pyodide = null;
+        let isInitialized = false;
+
+        // 初始化 Pyodide
+        async function initPyodide() {
+            const resultDiv = document.getElementById('result');
+            const btn = document.getElementById('calculateBtn');
+            
+            try {
+                resultDiv.className = 'loading';
+                resultDiv.textContent = '正在加载 Pyodide 和 Python 包，请稍候...';
+                btn.disabled = true;
+
+                pyodide = await loadPyodide();
+                
+                // 安装必要的包
+                await pyodide.loadPackage(['numpy', 'micropip']);
+                const micropip = pyodide.pyimport('micropip');
+                await micropip.install(['sgp4', 'astropy']);
+
+                // 加载 Python 函数代码
+                await pyodide.runPythonAsync(`
+from sgp4.api import Satrec
+from astropy.time import Time
+from astropy.coordinates import EarthLocation, ICRS, ITRS, CartesianRepresentation
+import numpy as np
+from astropy import units as u
+import json
+
+def find_satellite_overhead(tle_line1, tle_line2, lat, lon, alt, overhead_theta, t_start, t_end, time_step):
+    """查找卫星在指定时间区间内过顶（天顶角≤阈值）的时刻"""
+    # 初始化卫星和地面点
+    sat = Satrec.twoline2rv(tle_line1, tle_line2)
+    ground_loc = EarthLocation(
+        lat=lat * u.deg,
+        lon=lon * u.deg,
+        height=alt * 1000 * u.m
+    )
+
+    # 批量生成时间数组
+    dt_jd = time_step / 86400
+    jd_array = np.arange(t_start.jd, t_end.jd, dt_jd)
+    t_array = Time(jd_array, format="jd", scale="utc")
+
+    # 批量计算卫星位置
+    jd_int = jd_array.astype(int)
+    fr_array = jd_array - jd_int
+    rs = []
+    valid_indices = []
+
+    for i in range(len(jd_array)):
+        e, r, _ = sat.sgp4(jd_int[i], fr_array[i])
+        if e == 0:
+            rs.append(r)
+            valid_indices.append(i)
+
+    if not rs:
+        return {
+            'overhead_times': [],
+            'start_time': None,
+            'end_time': None,
+            'duration_seconds': 0
+        }
+
+    # 坐标转换
+    r_meters = np.array(rs) * 1000
+    t_valid = t_array[valid_indices]
+
+    sat_icrs = ICRS(CartesianRepresentation(
+        x=r_meters[:, 0] * u.m,
+        y=r_meters[:, 1] * u.m,
+        z=r_meters[:, 2] * u.m
+    ))
+    sat_itrs = sat_icrs.transform_to(ITRS(obstime=t_valid))
+
+    # 计算天顶角
+    gp = np.array([ground_loc.x.value, ground_loc.y.value, ground_loc.z.value])
+    z_mag = np.linalg.norm(gp)
+
+    sat_xyz = np.column_stack([
+        sat_itrs.x.value,
+        sat_itrs.y.value,
+        sat_itrs.z.value
+    ])
+
+    rho = sat_xyz - gp
+    rho_mag = np.linalg.norm(rho, axis=1)
+    dot_product = np.dot(rho, gp)
+
+    valid_mask = (rho_mag != 0) & (z_mag != 0)
+    if not np.any(valid_mask):
+        return {
+            'overhead_times': [],
+            'start_time': None,
+            'end_time': None,
+            'duration_seconds': 0
+        }
+
+    cos_theta = dot_product[valid_mask] / (rho_mag[valid_mask] * z_mag)
+    cos_theta = np.clip(cos_theta, -1.0, 1.0)
+    theta = np.degrees(np.arccos(cos_theta))
+
+    overhead_mask = theta <= overhead_theta
+    overhead_times = t_valid[valid_mask][overhead_mask].isot
+
+    return {
+        'overhead_times': list(overhead_times),
+        'start_time': overhead_times[0] if len(overhead_times) > 0 else None,
+        'end_time': overhead_times[-1] if len(overhead_times) > 0 else None,
+        'duration_seconds': len(overhead_times) * time_step if len(overhead_times) > 0 else 0
+    }
+                `);
+
+                isInitialized = true;
+                resultDiv.className = 'success';
+                resultDiv.textContent = '✓ Pyodide 初始化完成，可以开始计算！';
+                btn.disabled = false;
+
+            } catch (error) {
+                resultDiv.className = 'error';
+                resultDiv.textContent = `初始化失败: ${error.message}`;
+                btn.disabled = false;
+            }
+        }
+
+        // 计算卫星过顶
+        async function calculateOverhead() {
+            if (!isInitialized) {
+                await initPyodide();
+                return;
+            }
+
+            const resultDiv = document.getElementById('result');
+            const btn = document.getElementById('calculateBtn');
+
+            try {
+                btn.disabled = true;
+                resultDiv.className = 'loading';
+                resultDiv.textContent = '正在计算...';
+
+                // 获取输入参数
+                const params = {
+                    tle_line1: document.getElementById('tle_line1').value.trim(),
+                    tle_line2: document.getElementById('tle_line2').value.trim(),
+                    lat: parseFloat(document.getElementById('lat').value),
+                    lon: parseFloat(document.getElementById('lon').value),
+                    alt: parseFloat(document.getElementById('alt').value),
+                    overhead_theta: parseFloat(document.getElementById('overhead_theta').value),
+                    t_start: document.getElementById('t_start').value,
+                    t_end: document.getElementById('t_end').value,
+                    time_step: parseInt(document.getElementById('time_step').value)
+                };
+
+                // 调用 Python 函数
+                const result = await pyodide.runPythonAsync(`
+t_start = Time("${params.t_start}", format="isot", scale="utc")
+t_end = Time("${params.t_end}", format="isot", scale="utc")
+
+result = find_satellite_overhead(
+    tle_line1="${params.tle_line1}",
+    tle_line2="${params.tle_line2}",
+    lat=${params.lat},
+    lon=${params.lon},
+    alt=${params.alt},
+    overhead_theta=${params.overhead_theta},
+    t_start=t_start,
+    t_end=t_end,
+    time_step=${params.time_step}
+)
+
+json.dumps(result)
+                `);
+
+                const data = JSON.parse(result);
+
+                // 显示结果
+                let output = '计算结果:\n' + '='.repeat(50) + '\n';
+                
+                if (data.overhead_times && data.overhead_times.length > 0) {
+                    output += `✓ 找到卫星过顶时刻\n`;
+                    output += `  起始时间: ${data.start_time}\n`;
+                    output += `  结束时间: ${data.end_time}\n`;
+                    output += `  持续时间: ${data.duration_seconds} 秒\n`;
+                    output += `  过顶时刻数量: ${data.overhead_times.length} 个\n\n`;
+                    output += `前10个过顶时刻:\n`;
+                    data.overhead_times.slice(0, 10).forEach((time, index) => {
+                        output += `  ${index + 1}. ${time}\n`;
+                    });
+                } else {
+                    output += '✗ 在指定时间区间内，卫星没有过顶时刻\n';
+                }
+
+                output += '='.repeat(50);
+
+                resultDiv.className = 'success';
+                resultDiv.textContent = output;
+
+            } catch (error) {
+                resultDiv.className = 'error';
+                resultDiv.textContent = `计算错误: ${error.message}`;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // 页面加载时初始化
+        window.addEventListener('load', initPyodide);
+    </script>
+</body>
+</html>
+
