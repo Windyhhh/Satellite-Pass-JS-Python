@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>卫星过顶计算 - REST API 版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        textarea {
+            font-family: 'Courier New', monospace;
+            resize: vertical;
+            min-height: 60px;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+        
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        #status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+        
+        .status-info {
+            background: #e3f2fd;
+            color: #1976d2;
+            border-left: 4px solid #1976d2;
+        }
+        
+        .status-success {
+            background: #e8f5e9;
+            color: #388e3c;
+            border-left: 4px solid #388e3c;
+        }
+        
+        .status-error {
+            background: #ffebee;
+            color: #d32f2f;
+            border-left: 4px solid #d32f2f;
+        }
+        
+        #result {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 6px;
+            border: 2px solid #e0e0e0;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .api-info {
+            background: #fff3e0;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ff9800;
+        }
+        
+        .api-info strong {
+            color: #e65100;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛰️ 卫星过顶计算</h1>
+            <p>REST API 调用版本 - 需要先启动 Flask 服务</p>
+        </div>
+        
+        <div class="content">
+            <div class="api-info">
+                <strong>⚠️ 使用前请确保:</strong> 已启动 Flask API 服务 (python satellite_api.py)
+            </div>
+            
+            <div class="input-group">
+                <label>🌐 API 地址:</label>
+                <input type="text" id="apiUrl" value="http://localhost:5000">
+            </div>
+            
+            <div class="input-group">
+                <label>📡 TLE 第一行:</label>
+                <textarea id="tle_line1">1 25544U 98067A   24123.56789012  .00001234  00000-0  12345-3 0  9999</textarea>
+            </div>
+            
+            <div class="input-group">
+                <label>📡 TLE 第二行:</label>
+                <textarea id="tle_line2">2 25544  51.6432 123.4567 0001234  78.9012 281.2345 15.5432123456789</textarea>
+            </div>
+            
+            <div class="grid">
+                <div class="input-group">
+                    <label>📍 纬度 (度):</label>
+                    <input type="number" id="lat" value="39.9" step="0.1">
+                </div>
+                <div class="input-group">
+                    <label>📍 经度 (度):</label>
+                    <input type="number" id="lon" value="116.4" step="0.1">
+                </div>
+                <div class="input-group">
+                    <label>⛰️ 海拔 (千米):</label>
+                    <input type="number" id="alt" value="0.05" step="0.01">
+                </div>
+                <div class="input-group">
+                    <label>📐 天顶角阈值 (度):</label>
+                    <input type="number" id="overhead_theta" value="10" step="1">
+                </div>
+            </div>
+            
+            <div class="grid">
+                <div class="input-group">
+                    <label>🕐 起始时间:</label>
+                    <input type="text" id="t_start" value="2024-05-03T00:00:00">
+                </div>
+                <div class="input-group">
+                    <label>🕐 结束时间:</label>
+                    <input type="text" id="t_end" value="2024-05-16T00:00:00">
+                </div>
+                <div class="input-group">
+                    <label>⏱️ 时间步长 (秒):</label>
+                    <input type="number" id="time_step" value="10" step="1">
+                </div>
+            </div>
+            
+            <div class="button-group">
+                <button class="btn-secondary" onclick="checkHealth()">检查 API 状态</button>
+                <button class="btn-primary" onclick="calculate()">计算卫星过顶</button>
+            </div>
+            
+            <div id="status" class="hidden"></div>
+            <div id="result" class="hidden"></div>
+        </div>
+    </div>
+
+    <script>
+        const statusDiv = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
+        
+        function showStatus(message, type) {
+            statusDiv.className = `status-${type}`;
+            statusDiv.textContent = message;
+            statusDiv.classList.remove('hidden');
+        }
+        
+        function showResult(text) {
+            resultDiv.textContent = text;
+            resultDiv.classList.remove('hidden');
+        }
+        
+        function hideResult() {
+            resultDiv.classList.add('hidden');
+        }
+        
+        async function checkHealth() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            
+            try {
+                showStatus('正在检查 API 状态...', 'info');
+                hideResult();
+                
+                const response = await fetch(`${apiUrl}/api/health`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                showStatus(`✓ API 状态正常: ${data.status}`, 'success');
+                
+            } catch (error) {
+                showStatus(`✗ API 不可用: ${error.message}`, 'error');
+            }
+        }
+        
+        async function calculate() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            const buttons = document.querySelectorAll('button');
+            
+            try {
+                // 禁用按钮
+                buttons.forEach(btn => btn.disabled = true);
+                
+                showStatus('正在计算卫星过顶时刻...', 'info');
+                hideResult();
+                
+                // 收集参数
+                const params = {
+                    tle_line1: document.getElementById('tle_line1').value.trim(),
+                    tle_line2: document.getElementById('tle_line2').value.trim(),
+                    lat: parseFloat(document.getElementById('lat').value),
+                    lon: parseFloat(document.getElementById('lon').value),
+                    alt: parseFloat(document.getElementById('alt').value),
+                    overhead_theta: parseFloat(document.getElementById('overhead_theta').value),
+                    t_start: document.getElementById('t_start').value,
+                    t_end: document.getElementById('t_end').value,
+                    time_step: parseInt(document.getElementById('time_step').value)
+                };
+                
+                // 调用 API
+                const response = await fetch(`${apiUrl}/api/satellite/overhead`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(params)
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                // 显示结果
+                showStatus('✓ 计算完成！', 'success');
+                
+                let output = '计算结果:\n' + '='.repeat(60) + '\n\n';
+                
+                if (result.overhead_times && result.overhead_times.length > 0) {
+                    output += `✓ 找到卫星过顶时刻\n\n`;
+                    output += `起始时间: ${result.start_time}\n`;
+                    output += `结束时间: ${result.end_time}\n`;
+                    output += `持续时间: ${result.duration_seconds} 秒\n`;
+                    output += `过顶时刻数量: ${result.overhead_times.length} 个\n\n`;
+                    output += `前10个过顶时刻:\n`;
+                    output += '-'.repeat(60) + '\n';
+                    result.overhead_times.slice(0, 10).forEach((time, index) => {
+                        output += `${String(index + 1).padStart(3)}. ${time}\n`;
+                    });
+                } else {
+                    output += '✗ 在指定时间区间内，卫星没有过顶时刻\n';
+                }
+                
+                output += '\n' + '='.repeat(60);
+                showResult(output);
+                
+            } catch (error) {
+                showStatus(`✗ 计算失败: ${error.message}`, 'error');
+                hideResult();
+            } finally {
+                // 恢复按钮
+                buttons.forEach(btn => btn.disabled = false);
+            }
+        }
+        
+        // 页面加载时自动检查 API 状态
+        window.addEventListener('load', () => {
+            setTimeout(checkHealth, 500);
+        });
+    </script>
+</body>
+</html>
+
